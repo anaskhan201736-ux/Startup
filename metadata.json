@@ -1,0 +1,6 @@
+{
+  "name": "BookCycle - Free Student Textbook Exchange",
+  "description": "Donate and find used school textbooks for 1st to 10th Standard for free. Search by title, browse by standard and subject, and connect with fellow students.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
