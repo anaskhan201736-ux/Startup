@@ -15,37 +15,46 @@ import { FAQSection } from './components/FAQSection';
 import { Footer } from './components/Footer';
 import { Book, ClassLevel, SubjectCategory } from './types';
 import { BookOpen, Plus, Inbox, CheckCircle2 } from 'lucide-react';
-
-const STORAGE_KEY = 'bookcycle_books_v1';
+import {
+  subscribeToBooks,
+  addBookListing,
+  updateBookStatus,
+  deleteBookListing,
+} from './firebase';
 
 export default function App() {
-  // CRITICAL REQUIREMENT: Books must only be within 1-10 std.
-  const [books, setBooks] = useState<Book[]>(() => {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed)) {
-          // Keep only books strictly within 1st to 10th standard
-          return parsed.filter((b: Book) => {
-            const cls = (b.classLevel || '').toLowerCase();
-            const isBeyond10 =
-              cls.includes('11') ||
-              cls.includes('12') ||
-              cls.includes('undergraduate') ||
-              cls.includes('college') ||
-              cls.includes('graduate') ||
-              cls.includes('masters') ||
-              cls.includes('test prep');
-            return !isBeyond10;
-          });
-        }
+  const [books, setBooks] = useState<Book[]>([]);
+  const [isLoadingBooks, setIsLoadingBooks] = useState(true);
+
+  // Subscribe to real-time shared online database (Firestore)
+  useEffect(() => {
+    setIsLoadingBooks(true);
+    const unsubscribe = subscribeToBooks(
+      (liveBooks) => {
+        // Keep only books strictly within 1st to 10th standard
+        const validBooks = liveBooks.filter((b: Book) => {
+          const cls = (b.classLevel || '').toLowerCase();
+          const isBeyond10 =
+            cls.includes('11') ||
+            cls.includes('12') ||
+            cls.includes('undergraduate') ||
+            cls.includes('college') ||
+            cls.includes('graduate') ||
+            cls.includes('masters') ||
+            cls.includes('test prep');
+          return !isBeyond10;
+        });
+        setBooks(validBooks);
+        setIsLoadingBooks(false);
+      },
+      (err) => {
+        console.error('Subscription error:', err);
+        setIsLoadingBooks(false);
       }
-    } catch (e) {
-      console.error('Failed to parse stored books', e);
-    }
-    return [];
-  });
+    );
+
+    return () => unsubscribe();
+  }, []);
 
   // Page Routing State ('catalog' | 'donate')
   const [currentPage, setCurrentPage] = useState<'catalog' | 'donate'>(() => {
@@ -91,12 +100,13 @@ export default function App() {
   const [selectedBook, setSelectedBook] = useState<Book | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // Sync books to localStorage
+  // Synchronize modal state if book gets updated in real-time
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(books));
-    } catch (e) {
-      console.error('Failed to persist books', e);
+    if (selectedBook) {
+      const live = books.find((b) => b.id === selectedBook.id);
+      if (live) {
+        setSelectedBook(live);
+      }
     }
   }, [books]);
 
@@ -108,71 +118,74 @@ export default function App() {
     }, 4000);
   };
 
-  // Add Book Handler (called from DonatePage after submission)
-  const handleAddBook = (bookData: Omit<Book, 'id' | 'createdAt' | 'status'>) => {
-    const newBook: Book = {
-      ...bookData,
-      id: `book_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-      createdAt: new Date().toISOString(),
-      status: 'available',
-    };
+  // Add Book Handler: saves permanently to shared online database
+  const handleAddBook = async (bookData: Omit<Book, 'id' | 'createdAt' | 'status'>) => {
+    try {
+      await addBookListing(bookData);
+      
+      // Switch to catalog page
+      setCurrentPage('catalog');
+      window.location.hash = '';
+      showToast(`"${bookData.title}" is now live for all students!`);
 
-    // Prepend to listings
-    setBooks((prev) => [newBook, ...prev]);
-    
-    // Switch to catalog page
-    setCurrentPage('catalog');
-    window.location.hash = '';
-    showToast(`"${newBook.title}" was listed successfully!`);
+      // Reset filters so the newly created book is prominently visible
+      setSearchQuery('');
+      setSelectedClass('All');
+      setSelectedSubject('All');
+      setSelectedCondition('All Conditions');
+      setSelectedStatus('all');
 
-    // Reset filters so the newly created book is prominently visible
-    setSearchQuery('');
-    setSelectedClass('All');
-    setSelectedSubject('All');
-    setSelectedCondition('All Conditions');
-
-    // Scroll to the book listings area
-    setTimeout(() => {
-      document.getElementById('browse-section')?.scrollIntoView({ behavior: 'smooth' });
-    }, 200);
+      // Scroll to the book listings area
+      setTimeout(() => {
+        document.getElementById('browse-section')?.scrollIntoView({ behavior: 'smooth' });
+      }, 200);
+    } catch (err) {
+      console.error('Failed to list book online:', err);
+      showToast('Error saving listing to the shared database. Please try again.');
+      throw err;
+    }
   };
 
-  // Toggle Claimed status
-  // Toggle Taken status for donors
-  const handleToggleTaken = (bookId: string) => {
+  // Toggle Taken status for donors: updates online database instantly for all users
+  const handleToggleTaken = async (bookId: string) => {
+    const targetBook = books.find((b) => b.id === bookId);
+    if (!targetBook) return;
+
+    const isCurrentlyTaken = targetBook.status === 'taken' || targetBook.status === 'claimed';
+    const nextStatus = isCurrentlyTaken ? 'available' : 'taken';
+
+    // Optimistically update local view
     setBooks((prev) =>
-      prev.map((b) => {
-        if (b.id === bookId) {
-          const isCurrentlyTaken = b.status === 'taken' || b.status === 'claimed';
-          const nextStatus = isCurrentlyTaken ? 'available' : 'taken';
-          showToast(
-            nextStatus === 'taken'
-              ? 'Book marked as Taken! Thank you for sharing.'
-              : 'Book marked as Available again.'
-          );
-          return { ...b, status: nextStatus };
-        }
-        return b;
-      })
+      prev.map((b) => (b.id === bookId ? { ...b, status: nextStatus } : b))
+    );
+    setSelectedBook((prev) =>
+      prev && prev.id === bookId ? { ...prev, status: nextStatus } : prev
     );
 
-    setSelectedBook((prev) => {
-      if (prev && prev.id === bookId) {
-        const isCurrentlyTaken = prev.status === 'taken' || prev.status === 'claimed';
-        return {
-          ...prev,
-          status: isCurrentlyTaken ? 'available' : 'taken',
-        };
-      }
-      return prev;
-    });
+    showToast(
+      nextStatus === 'taken'
+        ? 'Book marked as Taken! Updated online for all users.'
+        : 'Book marked as Available again.'
+    );
+
+    try {
+      await updateBookStatus(bookId, nextStatus);
+    } catch (err) {
+      console.error('Failed to update status in database:', err);
+      showToast('Failed to sync status online. Please check your connection.');
+    }
   };
 
-  // Delete Book
-  const handleDeleteBook = (bookId: string) => {
-    setBooks((prev) => prev.filter((b) => b.id !== bookId));
-    showToast('Textbook listing removed.');
-    setSelectedBook(null);
+  // Delete Book: removes permanently from shared online database
+  const handleDeleteBook = async (bookId: string) => {
+    try {
+      await deleteBookListing(bookId);
+      showToast('Textbook listing removed permanently.');
+      setSelectedBook(null);
+    } catch (err) {
+      console.error('Failed to remove book:', err);
+      showToast('Failed to remove listing from online database.');
+    }
   };
 
   // Reset Filters
@@ -374,7 +387,18 @@ export default function App() {
               />
 
               {/* Book Catalog Display */}
-              {books.length === 0 ? (
+              {isLoadingBooks && books.length === 0 ? (
+                /* Connecting / Loading State */
+                <div className="py-20 text-center space-y-3 bg-white rounded-2xl border border-stone-200/80 p-10 max-w-md mx-auto shadow-2xs">
+                  <div className="w-8 h-8 border-3 border-emerald-700 border-t-transparent rounded-full animate-spin mx-auto" />
+                  <p className="text-sm font-semibold text-stone-700">
+                    Loading textbooks from online database...
+                  </p>
+                  <p className="text-xs text-stone-400">
+                    Syncing live listings across devices
+                  </p>
+                </div>
+              ) : books.length === 0 ? (
                 /* Pristine Empty State when no books exist yet */
                 <div className="p-8 sm:p-14 text-center rounded-2xl bg-white border border-stone-200/90 shadow-2xs max-w-2xl mx-auto">
                   <div className="w-14 h-14 rounded-2xl bg-emerald-50 text-emerald-800 mx-auto flex items-center justify-center border border-emerald-100 mb-4">

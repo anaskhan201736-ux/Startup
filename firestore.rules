@@ -1,0 +1,40 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidBook(data) {
+      return data.keys().hasAll(['title', 'classLevel', 'subject', 'condition', 'pickupLocation', 'status'])
+        && data.keys().hasOnly(['id', 'title', 'author', 'classLevel', 'subject', 'condition', 'pickupLocation', 'photoUrl', 'whatsappContact', 'donorName', 'editionYear', 'notes', 'coverPalette', 'createdAt', 'updatedAt', 'status'])
+        && data.title is string && data.title.size() > 0 && data.title.size() <= 200
+        && data.classLevel is string && data.classLevel.size() > 0 && data.classLevel.size() <= 50
+        && data.subject is string && data.subject.size() > 0 && data.subject.size() <= 60
+        && data.condition in ['Like New', 'Very Good', 'Good', 'Fair']
+        && data.pickupLocation is string && data.pickupLocation.size() > 0 && data.pickupLocation.size() <= 200
+        && data.status in ['available', 'taken', 'claimed']
+        && (!('author' in data) || (data.author is string && data.author.size() <= 100))
+        && (!('whatsappContact' in data) || (data.whatsappContact is string && data.whatsappContact.size() <= 50))
+        && (!('donorName' in data) || (data.donorName is string && data.donorName.size() <= 100))
+        && (!('editionYear' in data) || (data.editionYear is string && data.editionYear.size() <= 30))
+        && (!('notes' in data) || (data.notes is string && data.notes.size() <= 1000))
+        && (!('photoUrl' in data) || (data.photoUrl is string && data.photoUrl.size() <= 500000))
+        && (!('createdAt' in data) || (data.createdAt is string && data.createdAt.size() <= 50))
+        && (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 50));
+    }
+
+    // Books Collection: Public directory of textbooks for student exchange
+    match /books/{bookId} {
+      allow read: if true;
+      allow create: if isValidId(bookId) && isValidBook(request.resource.data);
+      allow update: if isValidId(bookId) && isValidBook(request.resource.data);
+      allow delete: if isValidId(bookId);
+    }
+  }
+}

@@ -21,7 +21,7 @@ import { sanitizeWhatsAppNumber, getWhatsAppChatUrl } from '../utils/whatsapp';
 
 interface DonatePageProps {
   onBackToCatalog: () => void;
-  onAddBook: (newBook: Omit<Book, 'id' | 'createdAt' | 'status'>) => void;
+  onAddBook: (newBook: Omit<Book, 'id' | 'createdAt' | 'status'>) => Promise<void> | void;
 }
 
 const CLASS_CHOICES = [
@@ -106,12 +106,13 @@ export const DonatePage: React.FC<DonatePageProps> = ({
   const [donorName, setDonorName] = useState('');
   const [notes, setNotes] = useState('');
 
-  // Drag and drop state
+  // Drag, photo & submission state
   const [isDragging, setIsDragging] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Handle Photo selection & compression
+  // Handle Photo selection & compression (optimizes for crisp display and fast online sync)
   const handlePhotoFile = async (file: File) => {
     if (!file.type.startsWith('image/')) {
       setErrorMessage('Please upload a valid image file (JPG, PNG, WebP).');
@@ -121,7 +122,7 @@ export const DonatePage: React.FC<DonatePageProps> = ({
     try {
       setIsPhotoProcessing(true);
       setErrorMessage('');
-      const compressedDataUrl = await compressImage(file, 900, 900, 0.82);
+      const compressedDataUrl = await compressImage(file, 720, 720, 0.72);
       setPhotoUrl(compressedDataUrl);
     } catch (err) {
       console.error(err);
@@ -145,8 +146,8 @@ export const DonatePage: React.FC<DonatePageProps> = ({
     }
   };
 
-  // Form submission
-  const handleSubmit = (e: React.FormEvent) => {
+  // Form submission: saves directly to shared online database
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!bookName.trim()) {
@@ -172,19 +173,27 @@ export const DonatePage: React.FC<DonatePageProps> = ({
       return;
     }
 
-    // Successfully create book listing
-    onAddBook({
-      title: bookName.trim(),
-      author: author.trim() || 'School Textbook',
-      classLevel: resolvedClass,
-      subject: resolvedSubject,
-      condition,
-      pickupLocation: location.trim(),
-      photoUrl: photoUrl || undefined,
-      whatsappContact: whatsappContact.trim(),
-      donorName: donorName.trim() || 'Student Donor',
-      notes: notes.trim() || undefined,
-    });
+    try {
+      setIsSubmitting(true);
+      setErrorMessage('');
+      await onAddBook({
+        title: bookName.trim(),
+        author: author.trim() || 'School Textbook',
+        classLevel: resolvedClass,
+        subject: resolvedSubject,
+        condition,
+        pickupLocation: location.trim(),
+        photoUrl: photoUrl || undefined,
+        whatsappContact: whatsappContact.trim(),
+        donorName: donorName.trim() || 'Student Donor',
+        notes: notes.trim() || undefined,
+      });
+    } catch (err) {
+      console.error(err);
+      setErrorMessage('Failed to publish listing online. Please check your internet connection.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   // Derived effective values for preview
@@ -545,11 +554,11 @@ export const DonatePage: React.FC<DonatePageProps> = ({
 
                 <button
                   type="submit"
-                  disabled={isPhotoProcessing}
+                  disabled={isPhotoProcessing || isSubmitting}
                   className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3 text-sm font-bold text-white bg-emerald-700 hover:bg-emerald-800 active:bg-emerald-900 rounded-xl shadow-xs hover:shadow transition-all cursor-pointer disabled:opacity-50"
                 >
                   <Check className="w-4 h-4 stroke-[3]" />
-                  <span>Publish Book Listing</span>
+                  <span>{isSubmitting ? 'Publishing Online...' : 'Publish Book Listing'}</span>
                 </button>
               </div>
 

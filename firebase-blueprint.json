@@ -1,0 +1,93 @@
+{
+  "entities": {
+    "Book": {
+      "title": "Book",
+      "description": "Textbook listed for free donation and exchange between students.",
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "Book title or textbook name"
+        },
+        "author": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "Author or publisher name"
+        },
+        "classLevel": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 50,
+          "description": "Class standard (e.g. Class 10 (10th Std))"
+        },
+        "subject": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60,
+          "description": "Subject category (e.g. Mathematics, Science)"
+        },
+        "condition": {
+          "type": "string",
+          "enum": ["Like New", "Very Good", "Good", "Fair"],
+          "description": "Physical condition of the book"
+        },
+        "pickupLocation": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "Location or campus area for the safe book handover"
+        },
+        "photoUrl": {
+          "type": "string",
+          "maxLength": 500000,
+          "description": "Compressed photo data URL or image URL of the textbook cover"
+        },
+        "whatsappContact": {
+          "type": "string",
+          "minLength": 5,
+          "maxLength": 30,
+          "description": "WhatsApp contact number used strictly for direct wa.me chat generation"
+        },
+        "donorName": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "Name or pseudonym of the student donor"
+        },
+        "editionYear": {
+          "type": "string",
+          "maxLength": 20,
+          "description": "Edition year or syllabus publication year"
+        },
+        "notes": {
+          "type": "string",
+          "maxLength": 1000,
+          "description": "Optional notes or study condition remarks"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["available", "taken", "claimed"],
+          "description": "Current availability status of the textbook"
+        },
+        "createdAt": {
+          "type": "string",
+          "maxLength": 50,
+          "description": "ISO timestamp when the book listing was created"
+        },
+        "updatedAt": {
+          "type": "string",
+          "maxLength": 50,
+          "description": "ISO timestamp when the book was last updated"
+        }
+      },
+      "required": ["title", "classLevel", "subject", "condition", "pickupLocation", "status"]
+    }
+  },
+  "firestore": {
+    "/books/{bookId}": {
+      "schema": "Book",
+      "description": "Collection of textbook listings available for students and donors."
+    }
+  }
+}
