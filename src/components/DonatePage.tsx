@@ -21,7 +21,10 @@ import { sanitizeWhatsAppNumber, getWhatsAppChatUrl } from '../utils/whatsapp';
 
 interface DonatePageProps {
   onBackToCatalog: () => void;
-  onAddBook: (newBook: Omit<Book, 'id' | 'createdAt' | 'status'>) => Promise<void> | void;
+  onAddBook: (
+    newBook: Omit<Book, 'id' | 'createdAt' | 'status'>,
+    photoFile?: File | null
+  ) => Promise<void> | void;
 }
 
 const CLASS_CHOICES = [
@@ -110,6 +113,7 @@ export const DonatePage: React.FC<DonatePageProps> = ({
   const [isDragging, setIsDragging] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Handle Photo selection & compression (optimizes for crisp display and fast online sync)
@@ -122,6 +126,7 @@ export const DonatePage: React.FC<DonatePageProps> = ({
     try {
       setIsPhotoProcessing(true);
       setErrorMessage('');
+      setPhotoFile(file);
       const compressedDataUrl = await compressImage(file, 720, 720, 0.72);
       setPhotoUrl(compressedDataUrl);
     } catch (err) {
@@ -176,21 +181,35 @@ export const DonatePage: React.FC<DonatePageProps> = ({
     try {
       setIsSubmitting(true);
       setErrorMessage('');
-      await onAddBook({
-        title: bookName.trim(),
-        author: author.trim() || 'School Textbook',
-        classLevel: resolvedClass,
-        subject: resolvedSubject,
-        condition,
-        pickupLocation: location.trim(),
-        photoUrl: photoUrl || undefined,
-        whatsappContact: whatsappContact.trim(),
-        donorName: donorName.trim() || 'Student Donor',
-        notes: notes.trim() || undefined,
-      });
-    } catch (err) {
-      console.error(err);
-      setErrorMessage('Failed to publish listing online. Please check your internet connection.');
+      await onAddBook(
+        {
+          title: bookName.trim(),
+          author: author.trim() || 'School Textbook',
+          classLevel: resolvedClass,
+          subject: resolvedSubject,
+          condition,
+          pickupLocation: location.trim(),
+          photoUrl: photoUrl || undefined,
+          whatsappContact: whatsappContact.trim(),
+          donorName: donorName.trim() || 'Student Donor',
+          notes: notes.trim() || undefined,
+        },
+        photoFile
+      );
+    } catch (err: any) {
+      console.error('Publish error:', err);
+      let msg = 'Failed to publish listing online. Please try again.';
+      if (err?.message) {
+        try {
+          const parsed = JSON.parse(err.message);
+          if (parsed?.error) {
+            msg = `Error: ${parsed.error}`;
+          }
+        } catch {
+          msg = err.message;
+        }
+      }
+      setErrorMessage(msg);
     } finally {
       setIsSubmitting(false);
     }
@@ -434,7 +453,10 @@ export const DonatePage: React.FC<DonatePageProps> = ({
                         </button>
                         <button
                           type="button"
-                          onClick={() => setPhotoUrl(null)}
+                          onClick={() => {
+                            setPhotoUrl(null);
+                            setPhotoFile(null);
+                          }}
                           className="px-2.5 py-1 text-xs bg-rose-600/90 hover:bg-rose-700 text-white rounded-md font-medium cursor-pointer transition-colors"
                         >
                           Remove
@@ -541,6 +563,14 @@ export const DonatePage: React.FC<DonatePageProps> = ({
                   />
                 </div>
               </div>
+
+              {/* Error Alert above submit button */}
+              {errorMessage && (
+                <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs sm:text-sm flex items-start gap-2.5">
+                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                  <span className="font-medium">{errorMessage}</span>
+                </div>
+              )}
 
               {/* Submit CTA */}
               <div className="pt-4 border-t border-stone-200 flex flex-col sm:flex-row items-center justify-between gap-4">

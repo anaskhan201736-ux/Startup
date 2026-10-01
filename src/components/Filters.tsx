@@ -1,5 +1,5 @@
 import React from 'react';
-import { Search, X, SlidersHorizontal, BookOpen, Layers } from 'lucide-react';
+import { Search, X, SlidersHorizontal, BookOpen, Layers, RefreshCw } from 'lucide-react';
 import { BookCondition, ClassLevel, SubjectCategory } from '../types';
 
 interface FiltersProps {
@@ -16,6 +16,8 @@ interface FiltersProps {
   onResetFilters: () => void;
   isFiltered: boolean;
   totalFilteredCount: number;
+  onRefresh?: () => void;
+  isRefreshing?: boolean;
 }
 
 export const CLASS_OPTIONS: ClassLevel[] = [
@@ -65,6 +67,8 @@ export const Filters: React.FC<FiltersProps> = ({
   onResetFilters,
   isFiltered,
   totalFilteredCount,
+  onRefresh,
+  isRefreshing,
 }) => {
   return (
     <div id="browse-section" className="space-y-6 pt-4">
@@ -241,11 +245,23 @@ export const Filters: React.FC<FiltersProps> = ({
             </div>
           </div>
 
-          {/* Reset Filters & Results Indicator */}
+          {/* Reset Filters, Refresh & Results Indicator */}
           <div className="flex items-center gap-3 text-xs text-stone-500 w-full md:w-auto justify-between md:justify-end">
             <span>
               Showing <strong className="font-semibold text-stone-800 tabular-nums">{totalFilteredCount}</strong> textbooks
             </span>
+            {onRefresh && (
+              <button
+                type="button"
+                onClick={onRefresh}
+                disabled={isRefreshing}
+                title="Fetch latest listings directly from Firestore"
+                className="px-2 py-1 rounded-md text-stone-600 hover:text-emerald-800 hover:bg-stone-100 transition-colors inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3 h-3 ${isRefreshing ? 'animate-spin text-emerald-700' : ''}`} />
+                <span>{isRefreshing ? 'Syncing...' : 'Refresh'}</span>
+              </button>
+            )}
             {isFiltered && (
               <button
                 type="button"

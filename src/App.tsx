@@ -16,6 +16,7 @@ import { Footer } from './components/Footer';
 import { Book, ClassLevel, SubjectCategory } from './types';
 import { BookOpen, Plus, Inbox, CheckCircle2 } from 'lucide-react';
 import {
+  getBooksFromFirestore,
   subscribeToBooks,
   addBookListing,
   updateBookStatus,
@@ -25,26 +26,46 @@ import {
 export default function App() {
   const [books, setBooks] = useState<Book[]>([]);
   const [isLoadingBooks, setIsLoadingBooks] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  // Subscribe to real-time shared online database (Firestore)
+  // Helper to filter textbooks strictly within 1st to 10th standard
+  const filterValidBooks = (bookList: Book[]) => {
+    return bookList.filter((b: Book) => {
+      const cls = (b.classLevel || '').toLowerCase();
+      const isBeyond10 =
+        cls.includes('11') ||
+        cls.includes('12') ||
+        cls.includes('undergraduate') ||
+        cls.includes('college') ||
+        cls.includes('graduate') ||
+        cls.includes('masters') ||
+        cls.includes('test prep');
+      return !isBeyond10;
+    });
+  };
+
+  // Explicitly fetch book listings directly from Cloud Firestore
+  const fetchFreshBooks = async (silent = false) => {
+    if (!silent) setIsRefreshing(true);
+    try {
+      const liveDocs = await getBooksFromFirestore();
+      setBooks(filterValidBooks(liveDocs));
+    } catch (err) {
+      console.error('Failed to load books from Firestore:', err);
+    } finally {
+      setIsLoadingBooks(false);
+      setIsRefreshing(false);
+    }
+  };
+
+  // When page opens: fetch directly from Firestore & subscribe to live multi-device updates
   useEffect(() => {
     setIsLoadingBooks(true);
+    fetchFreshBooks(false);
+
     const unsubscribe = subscribeToBooks(
       (liveBooks) => {
-        // Keep only books strictly within 1st to 10th standard
-        const validBooks = liveBooks.filter((b: Book) => {
-          const cls = (b.classLevel || '').toLowerCase();
-          const isBeyond10 =
-            cls.includes('11') ||
-            cls.includes('12') ||
-            cls.includes('undergraduate') ||
-            cls.includes('college') ||
-            cls.includes('graduate') ||
-            cls.includes('masters') ||
-            cls.includes('test prep');
-          return !isBeyond10;
-        });
-        setBooks(validBooks);
+        setBooks(filterValidBooks(liveBooks));
         setIsLoadingBooks(false);
       },
       (err) => {
@@ -118,11 +139,17 @@ export default function App() {
     }, 4000);
   };
 
-  // Add Book Handler: saves permanently to shared online database
-  const handleAddBook = async (bookData: Omit<Book, 'id' | 'createdAt' | 'status'>) => {
+  // Add Book Handler: saves to Firestore and refreshes from Firestore
+  const handleAddBook = async (
+    bookData: Omit<Book, 'id' | 'createdAt' | 'status'>,
+    photoFile?: File | null
+  ) => {
     try {
-      await addBookListing(bookData);
+      await addBookListing(bookData, photoFile);
       
+      // Immediately refresh listing directly from Firestore
+      await fetchFreshBooks(true);
+
       // Switch to catalog page
       setCurrentPage('catalog');
       window.location.hash = '';
@@ -146,7 +173,7 @@ export default function App() {
     }
   };
 
-  // Toggle Taken status for donors: updates online database instantly for all users
+  // Toggle Taken status for donors: updates online database and refreshes from Firestore
   const handleToggleTaken = async (bookId: string) => {
     const targetBook = books.find((b) => b.id === bookId);
     if (!targetBook) return;
@@ -154,33 +181,26 @@ export default function App() {
     const isCurrentlyTaken = targetBook.status === 'taken' || targetBook.status === 'claimed';
     const nextStatus = isCurrentlyTaken ? 'available' : 'taken';
 
-    // Optimistically update local view
-    setBooks((prev) =>
-      prev.map((b) => (b.id === bookId ? { ...b, status: nextStatus } : b))
-    );
-    setSelectedBook((prev) =>
-      prev && prev.id === bookId ? { ...prev, status: nextStatus } : prev
-    );
-
-    showToast(
-      nextStatus === 'taken'
-        ? 'Book marked as Taken! Updated online for all users.'
-        : 'Book marked as Available again.'
-    );
-
     try {
       await updateBookStatus(bookId, nextStatus);
+      await fetchFreshBooks(true);
+      showToast(
+        nextStatus === 'taken'
+          ? 'Book marked as Taken! Updated for all users.'
+          : 'Book marked as Available again.'
+      );
     } catch (err) {
       console.error('Failed to update status in database:', err);
       showToast('Failed to sync status online. Please check your connection.');
     }
   };
 
-  // Delete Book: removes permanently from shared online database
+  // Delete Book: removes permanently from shared online database and refreshes
   const handleDeleteBook = async (bookId: string) => {
     try {
       await deleteBookListing(bookId);
-      showToast('Textbook listing removed permanently.');
+      await fetchFreshBooks(true);
+      showToast('Textbook listing removed.');
       setSelectedBook(null);
     } catch (err) {
       console.error('Failed to remove book:', err);
@@ -384,6 +404,8 @@ export default function App() {
                 onResetFilters={handleResetFilters}
                 isFiltered={isFiltered}
                 totalFilteredCount={filteredBooks.length}
+                onRefresh={() => fetchFreshBooks(false)}
+                isRefreshing={isRefreshing}
               />
 
               {/* Book Catalog Display */}
